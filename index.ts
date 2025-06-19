@@ -1,8 +1,26 @@
 import * as readline from "readline";
 import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
+import chalk from "chalk";
 
-export type Pos = { x: number, y: number };
+type Pos = { x: number, y: number };
+const color: { [key: number]: (text: string) => string } = {
+  1: chalk.whiteBright,
+  2: chalk.green,
+  3: chalk.yellow,
+  4: chalk.red,
+  5: chalk.blue,
+  6: chalk.magenta,
+  7: chalk.cyan,
+  8: chalk.redBright,
+  9: chalk.greenBright,
+  10: chalk.yellowBright,
+  11: chalk.blueBright,
+  12: chalk.magentaBright,
+  13: chalk.cyanBright,
+  14: chalk.gray,
+  15: chalk.white,
+}
 
 const dir = "./levels";
 const levels = [] as number[][][];
@@ -18,17 +36,31 @@ function ask(question: string): Promise<string> {
   }));
 }
 
+// This is colorless
+// function displayCarPark() {
+//   // When the game is over, the player's car will be drawn outside the car park
+//   console.log("+%s+","-".repeat(carPark[0].length * 3 + 1));
+//   carPark.forEach((row, i) => {
+//     console.log(
+//       "| " + 
+//       row.map(num => num === 0 ? " ." : num.toString().padStart(2, " ")).join(" ") + //replace(/1(.)/, "¹$1")
+//       (i === exitY ? " ." : " |") + (i === exitY && gameOver ? " 1 1" : "")
+//     );
+//   });
+//   console.log("+%s+","-".repeat(carPark[0].length * 3 + 1));
+// }
+
 function displayCarPark() {
   // When the game is over, the player's car will be drawn outside the car park
-  console.log("+%s+","-".repeat(carPark[0].length * 3 + 1));
+  console.log("+%s+","-".repeat(carPark[0].length * 2 + 2));
   carPark.forEach((row, i) => {
     console.log(
       "| " + 
-      row.map(num => num === 0 ? " ." : num.toString().padStart(2, " ")).join(" ") + //replace(/1(.)/, "¹$1")
+      row.map(num => num === 0 ? " ." : color[num](num.toString().padStart(2, " ").replace(/1(.)/, "¹$1"))).join("") + //replace(/1(.)/, "¹$1")
       (i === exitY ? " ." : " |") + (i === exitY && gameOver ? " 1 1" : "")
     );
   });
-  console.log("+%s+","-".repeat(carPark[0].length * 3 + 1));
+  console.log("+%s+","-".repeat(carPark[0].length * 2 + 2));
 }
 
 function searchCarTopLeft(num: number): Pos | undefined {
@@ -172,7 +204,7 @@ async function main() {
   for (const file of files) {
     const content = readFileSync(join(dir, file), "utf-8");
     const level = content.split(/\r?\n/).map(line => {
-      return line.split("").map(char => parseInt(char, 36));
+      return line.split("").map(char => parseInt(char, 16));
     });
     levels.push(level);
   }
