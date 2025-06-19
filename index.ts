@@ -56,8 +56,8 @@ function displayCarPark() {
   carPark.forEach((row, i) => {
     console.log(
       "| " + 
-      row.map(num => num === 0 ? " ." : color[num](num.toString().padStart(2, " ").replace(/1(.)/, "¹$1"))).join("") + //replace(/1(.)/, "¹$1")
-      (i === exitY ? " ." : " |") + (i === exitY && gameOver ? " 1 1" : "")
+      row.map(num => num === 0 ? " ." : color[num](num.toString().padStart(2, " ").replace(/1(.)/, "¹$1"))).join("") +
+      (i === exitY ? " ." : " |") + (i === exitY && gameOver ? color[1](" 1 1") : "")
     );
   });
   console.log("+%s+","-".repeat(carPark[0].length * 2 + 2));
@@ -199,6 +199,16 @@ function moveCar(topLeft: Pos, bottomRight: Pos, direction: string) {
 }
 
 async function main() {
+  console.log(`\n${color[4]("~~")} ${color[1](" Rush Hour ")} ${color[4]("~~")}`);
+  console.log("Oh no! Your car is stuck in a parking lot and you need to get it out!");
+  console.log(
+    `Move your car (${color[4]("1")}) or the other cars (${color[4]("2")}-${color[4]("15")}) to make space for your car`
+  );
+  console.log("to exit the parking lot on the right side.  " +
+    `Use '${color[4]("w")}', '${color[4]("a")}', '${color[4]("s")}', '${color[4]("d")}' to`
+  );
+  console.log(`move the cars up, left, down, and right respectively.`);
+  console.log(`${color[4]("3dd")} will move car 3 down twice for example.\n`);
   // Load levels
   const files = readdirSync(dir);
   for (const file of files) {
@@ -208,55 +218,63 @@ async function main() {
     });
     levels.push(level);
   }
-  // Ask player which level to play
-  const levelChoice = await ask(`Choose a level (1-${levels.length}): `);
-  if (isNaN(Number(levelChoice)) || Number(levelChoice) < 1 || Number(levelChoice) > levels.length) {
-    console.log("Invalid level choice. Exiting game.");
-    return;
-  }
-  // Load the chosen level
-  carPark = levels[Number(levelChoice) - 1];
-  // Start game loop
-  while (!gameOver) {
-    // Display the car park
-    displayCarPark();
-    // Ask for the next turn
-    const nextTurn = await ask("Your Turn: ");
-    // Maybe the player wants to quit
-    if (nextTurn.toLowerCase() === "q") {
+  while (true) {
+    gameOver = false;
+    // Ask player which level to play
+    const levelChoice = await ask(
+      `Choose a level (${color[4]("1")}-${color[4](levels.length.toString())}) or (${color[4]("q")})uit: `);
+    if (levelChoice.toLowerCase() === "q") {
       console.log("Quitting the game.");
       return;
     }
-    // Validate input
-    const validInput = nextTurn.match(/^(\d+)(w+|a+|s+|d+)$/);
-    if (!validInput) {
-      console.log("Invalid input. Input has to be of the form '<car number><direction wasd>'");
-      continue;
+    if (isNaN(Number(levelChoice)) || Number(levelChoice) < 1 || Number(levelChoice) > levels.length) {
+      console.log("Invalid level choice. Exiting game.");
+      return;
     }
-    const carNumber = Number(validInput[1]);
-    if (carNumber < 1) {
-      console.log("Invalid car number. Please enter a positive integer.");
-      continue;
-    }
-    const directionInput = validInput[2];
-    // Search the specified car in the car park
-    const topLeftCarPos = searchCarTopLeft(carNumber);
-    if (!topLeftCarPos) {
-      console.log(`Car ${carNumber} not found in the car park.`);
-      continue;
-    }
-    const bottomRightCarPos = searchCarBottomRight(topLeftCarPos);
-    if (!bottomRightCarPos) {
-      console.log(`Dev: you messed up. searchCarBottomRight returned undefined`);
-      continue;
-    }
-    // Move car
-    moveCar(topLeftCarPos, bottomRightCarPos, directionInput)
+    // Load the chosen level
+    carPark = levels[Number(levelChoice) - 1];
+    // Start game loop
+    while (!gameOver) {
+      // Display the car park
+      displayCarPark();
+      // Ask for the next turn
+      const nextTurn = await ask(`Enter turn or (${color[4]("q")})uit: `);
+      // Maybe the player wants to quit
+      if (nextTurn.toLowerCase() === "q") {
+        console.log("Quitting the level.");
+        break;
+      }
+      // Validate input
+      const validInput = nextTurn.match(/^(\d+)(w+|a+|s+|d+)$/);
+      if (!validInput) {
+        console.log("Invalid input. Input has to be of the form '<car number><direction wasd>'");
+        continue;
+      }
+      const carNumber = Number(validInput[1]);
+      if (carNumber < 1) {
+        console.log("Invalid car number. Please enter a positive integer.");
+        continue;
+      }
+      const directionInput = validInput[2];
+      // Search the specified car in the car park
+      const topLeftCarPos = searchCarTopLeft(carNumber);
+      if (!topLeftCarPos) {
+        console.log(`Car ${carNumber} not found in the car park.`);
+        continue;
+      }
+      const bottomRightCarPos = searchCarBottomRight(topLeftCarPos);
+      if (!bottomRightCarPos) {
+        console.log(`Dev: you messed up. searchCarBottomRight returned undefined`);
+        continue;
+      }
+      // Move car
+      moveCar(topLeftCarPos, bottomRightCarPos, directionInput)
 
-    // Safety break approved by Noah (he's almost a real developer now)
-    // break; whoops not so save anymore haha
-  }
-  displayCarPark();
+      // Safety break approved by Noah (he's almost a real developer now)
+      // break; whoops not so save anymore haha
+    } // while(!gameOver)
+    displayCarPark();
+  } // while(True)
 }
 
 main();
