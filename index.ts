@@ -1,5 +1,5 @@
 import * as readline from "readline";
-import { readdirSync, readFileSync } from "fs";
+import { readdirSync, readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import chalk from "chalk";
 
@@ -22,11 +22,14 @@ const color: { [key: number]: (text: string) => string } = {
   15: chalk.white,
 }
 
-const dir = "./levels";
+const levelDir = "./levels";
+const scoresFile = "scores.json";
 const levels = [] as number[][][];
+let scores = {} as { [key: string]: number };
 let carPark = [] as number[][];
 const exitY = 2;
 let gameOver = false;
+let turns = 0;
 
 function ask(question: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -36,31 +39,17 @@ function ask(question: string): Promise<string> {
   }));
 }
 
-// This is colorless
-// function displayCarPark() {
-//   // When the game is over, the player's car will be drawn outside the car park
-//   console.log("+%s+","-".repeat(carPark[0].length * 3 + 1));
-//   carPark.forEach((row, i) => {
-//     console.log(
-//       "| " + 
-//       row.map(num => num === 0 ? " ." : num.toString().padStart(2, " ")).join(" ") + //replace(/1(.)/, "¹$1")
-//       (i === exitY ? " ." : " |") + (i === exitY && gameOver ? " 1 1" : "")
-//     );
-//   });
-//   console.log("+%s+","-".repeat(carPark[0].length * 3 + 1));
-// }
-
 function displayCarPark() {
   // When the game is over, the player's car will be drawn outside the car park
-  console.log("+%s+","-".repeat(carPark[0].length * 2 + 2));
+  console.log("+%s+","-".repeat(carPark[0].length * 2 + 1));
   carPark.forEach((row, i) => {
     console.log(
-      "| " + 
+      "|" + 
       row.map(num => num === 0 ? " ." : color[num](num.toString().padStart(2, " ").replace(/1(.)/, "¹$1"))).join("") +
       (i === exitY ? " ." : " |") + (i === exitY && gameOver ? color[1](" 1 1") : "")
     );
   });
-  console.log("+%s+","-".repeat(carPark[0].length * 2 + 2));
+  console.log("+%s+","-".repeat(carPark[0].length * 2 + 1));
 }
 
 function searchCarTopLeft(num: number): Pos | undefined {
@@ -101,135 +90,154 @@ function moveCar(topLeft: Pos, bottomRight: Pos, direction: string) {
   const carNumber = carPark[topLeft.y][topLeft.x];
   const dir = direction.charAt(0);
   const range = direction.length;
+  let stepsMade = 0;
   for (let i = 0; i < range; i++) {
     switch (dir) {
       case 'w': // up
         if (topLeft.x !== bottomRight.x) {
-          console.log("You can only move a car up if it is vertical.");
+          console.error("You can only move a car up if it is vertical.");
           return;
         }
         if (topLeft.y === 0) {
-          console.log("You cannot move a car up if it is already at the top edge.");
-          return;
+          console.error("You cannot move a car up if it is already at the top edge.");
+          break;
         }
         if (carPark[topLeft.y - 1][topLeft.x] !== 0) {
-          console.log("Another car is blocking your car");
-          return;
+          console.error("Another car is blocking your car");
+          break;
         }
         carPark[topLeft.y - 1][topLeft.x] = carNumber;
         carPark[bottomRight.y][bottomRight.x] = 0;
         topLeft.y -= 1; // Update the topLeft position
         bottomRight.y -= 1; // Update the bottomRight position
+        stepsMade += 1; // Increment steps made
         break;
       case 'a': // left
         if (topLeft.y !== bottomRight.y) {
-          console.log("You can only move a car left if it is horizontal.");
+          console.error("You can only move a car left if it is horizontal.");
           return;
         }
         if (topLeft.x === 0) {
-          console.log("You cannot move a car left if it is already at the left edge.");
-          return;
+          console.error("You cannot move a car left if it is already at the left edge.");
+          break;
         }
         if (carPark[topLeft.y][topLeft.x - 1] !== 0) {
-          console.log("Another car is blocking your car");
-          return;
+          console.error("Another car is blocking your car");
+          break;
         }
         carPark[topLeft.y][topLeft.x - 1] = carNumber;
         carPark[bottomRight.y][bottomRight.x] = 0;
         topLeft.x -= 1; // Update the topLeft position
         bottomRight.x -= 1; // Update the bottomRight position
+        stepsMade += 1; // Increment steps made
         break;
       case 's': // down
         if (topLeft.x !== bottomRight.x) {
-          console.log("You can only move a car down if it is vertical.");
+          console.error("You can only move a car down if it is vertical.");
           return;
         }
         if (bottomRight.y === carPark.length - 1) {
-          console.log("You cannot move a car down if it is already at the bottom edge.");
-          return;
+          console.error("You cannot move a car down if it is already at the bottom edge.");
+          break;
         }
         if (carPark[bottomRight.y + 1][topLeft.x] !== 0) {
-          console.log("Another car is blocking your car");
-          return;
+          console.error("Another car is blocking your car");
+          break;
         }
         carPark[bottomRight.y + 1][topLeft.x] = carNumber;
         carPark[topLeft.y][topLeft.x] = 0;
         topLeft.y += 1; // Update the topLeft position
         bottomRight.y += 1; // Update the bottomRight position
+        stepsMade += 1; // Increment steps made
         break;
       case 'd': // right
         if (topLeft.y !== bottomRight.y) {
-          console.log("You can only move a car right if it is horizontal.");
+          console.error("You can only move a car right if it is horizontal.");
           return;
         }
         if (bottomRight.x === carPark[topLeft.y].length - 1) {
           if (topLeft.y === exitY) {
             if (carNumber === 1) {
-              console.log("You have successfully moved your car to the exit! You win!");
               // Car is removed from the car park
               carPark[topLeft.y][topLeft.x] = 0;
               carPark[bottomRight.y][bottomRight.x] = 0;
               gameOver = true;
+              turns += 1;
               return;
             } else {
-              console.log("You somehow managed to move the wrong car to the exit. Dev looses!");
+              console.error("You somehow managed to move the wrong car to the exit. Dev looses!");
               gameOver = true;
+              turns += 1;
               return;
             }
           }
-          console.log("You cannot move a car right if it is already at the right edge.");
-          return;
+          console.error("You cannot move a car right if it is already at the right edge.");
+          break;
         }
         if (carPark[topLeft.y][bottomRight.x + 1] !== 0) {
-          console.log("Another car is blocking your car");
-          return;
+          console.error("Another car is blocking your car");
+          break;
         }
         carPark[topLeft.y][bottomRight.x + 1] = carNumber;
         carPark[topLeft.y][topLeft.x] = 0;
         topLeft.x += 1; // Update the topLeft position
         bottomRight.x += 1; // Update the bottomRight position
+        stepsMade += 1; // Increment steps made
         break;
       default:
         // The direction string was invalid
         return;
     }
   }
-  // The direction string was empty
+  // Movement done or direction string was empty
+  if (stepsMade > 0) {
+    turns += 1;
+  }
   return;
 }
 
 async function main() {
-  console.log(`\n${color[4]("~~")} ${color[1](" Rush Hour ")} ${color[4]("~~")}`);
+  console.log(`\n${color[3]("~~")} ${color[1](" Rush Hour ")} ${color[3]("~~")}`);
   console.log("Oh no! Your car is stuck in a parking lot and you need to get it out!");
   console.log(
-    `Move your car (${color[4]("1")}) or the other cars (${color[4]("2")}-${color[4]("15")}) to make space for your car`
+    `Move your car (${color[3]("1")}) or the other cars (${color[3]("2")}-${color[3]("15")}) to make space for your car`
   );
   console.log("to exit the parking lot on the right side.  " +
-    `Use '${color[4]("w")}', '${color[4]("a")}', '${color[4]("s")}', '${color[4]("d")}' to`
+    `Use '${color[3]("w")}', '${color[3]("a")}', '${color[3]("s")}', '${color[3]("d")}' to`
   );
   console.log(`move the cars up, left, down, and right respectively.`);
-  console.log(`${color[4]("3dd")} will move car 3 down twice for example.\n`);
+  console.log(`${color[3]("3dd")} will move car 3 down twice for example.\n`);
   // Load levels
-  const files = readdirSync(dir);
+  const files = readdirSync(levelDir);
   for (const file of files) {
-    const content = readFileSync(join(dir, file), "utf-8");
+    const content = readFileSync(join(levelDir, file), "utf-8");
     const level = content.split(/\r?\n/).map(line => {
       return line.split("").map(char => parseInt(char, 16));
     });
     levels.push(level);
   }
+  // Load scores
+  if (existsSync(scoresFile)) {
+    const raw = readFileSync(scoresFile, "utf-8");
+    scores = JSON.parse(raw);
+  } else {
+    scores = {};
+    writeFileSync(scoresFile, JSON.stringify(scores, null, 2), "utf-8");
+  }
+  // Menu
   while (true) {
     gameOver = false;
+    turns = 0;
     // Ask player which level to play
     const levelChoice = await ask(
-      `Choose a level (${color[4]("1")}-${color[4](levels.length.toString())}) or (${color[4]("q")})uit: `);
+      `Choose a level (${color[3]("1")}-${color[3](levels.length.toString())}) or (${color[4]("q")})uit: `);
     if (levelChoice.toLowerCase() === "q") {
       console.log("Quitting the game.");
-      return;
+      break;
     }
     if (isNaN(Number(levelChoice)) || Number(levelChoice) < 1 || Number(levelChoice) > levels.length) {
-      console.log("Invalid level choice. Exiting game.");
-      return;
+      console.error("Invalid level choice!");
+      continue;
     }
     // Load the chosen level
     carPark = levels[Number(levelChoice) - 1];
@@ -238,7 +246,7 @@ async function main() {
       // Display the car park
       displayCarPark();
       // Ask for the next turn
-      const nextTurn = await ask(`Enter turn or (${color[4]("q")})uit: `);
+      const nextTurn = await ask(`Turn ${turns + 1}: Enter turn or (${color[4]("q")})uit: `);
       // Maybe the player wants to quit
       if (nextTurn.toLowerCase() === "q") {
         console.log("Quitting the level.");
@@ -247,24 +255,24 @@ async function main() {
       // Validate input
       const validInput = nextTurn.match(/^(\d+)(w+|a+|s+|d+)$/);
       if (!validInput) {
-        console.log("Invalid input. Input has to be of the form '<car number><direction wasd>'");
+        console.error("Invalid input. Input has to be of the form '<car number><direction wasd>'");
         continue;
       }
       const carNumber = Number(validInput[1]);
       if (carNumber < 1) {
-        console.log("Invalid car number. Please enter a positive integer.");
+        console.error("Invalid car number. Please enter a positive integer.");
         continue;
       }
       const directionInput = validInput[2];
       // Search the specified car in the car park
       const topLeftCarPos = searchCarTopLeft(carNumber);
       if (!topLeftCarPos) {
-        console.log(`Car ${carNumber} not found in the car park.`);
+        console.error(`Car ${carNumber} not found in the car park.`);
         continue;
       }
       const bottomRightCarPos = searchCarBottomRight(topLeftCarPos);
       if (!bottomRightCarPos) {
-        console.log(`Dev: you messed up. searchCarBottomRight returned undefined`);
+        console.error(`Dev: you messed up. searchCarBottomRight returned undefined`);
         continue;
       }
       // Move car
@@ -274,6 +282,12 @@ async function main() {
       // break; whoops not so save anymore haha
     } // while(!gameOver)
     displayCarPark();
+    console.log(`You escaped from the parking lot in ${color[3](turns.toString())} turns!`);
+    if (!scores[Number(levelChoice)] || scores[Number(levelChoice)] > turns) {
+      console.log("That's a new high score!");
+      scores[Number(levelChoice)] = turns;
+      writeFileSync(scoresFile, JSON.stringify(scores, null, 2), "utf-8");
+    }
   } // while(True)
 }
 
