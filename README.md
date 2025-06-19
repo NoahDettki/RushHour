@@ -1,4 +1,5 @@
 # Rush Hour in TypeScript
+![Screenshot](screenshot.png)
 ## Description
 Ever wanted to play the classic board game Rush Hour in your console? No? Well, now you can anyways!   
 Push cars around to get your own car (number 1) to the exit of the parking lot.
