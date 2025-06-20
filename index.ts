@@ -167,7 +167,14 @@ async function levelEditor() {
       continue;
     }
     if (eInput.toLowerCase() === "v") {
-      console.log("Not yet implemented");
+      const result = validateLevel();
+      if (result) {
+        console.log(colorize("#gLevel is valid!#"));
+        console.log(result);
+      }
+      else {
+        console.error("Invalid level!");
+      }
       continue;
     }
     if (eInput.toLowerCase() === "q") {
@@ -176,6 +183,115 @@ async function levelEditor() {
     console.error("Invalid input");
   }
   console.log("Quitting level editor.");
+}
+
+function hashCarPark(park: number[][]): string {
+  return park.map(row => row.join(" ")).join("\n");
+}
+
+function validateLevel() {
+  // Detect all car numbers in the park
+  // (So that the algorithm does not try to move cars that are not there)
+  const cars = {} as { [key: number]: Record<string, Pos> }
+  const availableCarsHorizontal = new Set<number>();
+  const availableCarsVertical = new Set<number>();
+  for (let y = 0; y < carPark.length; y++) {
+    for (let x = 0; x < carPark[0].length; x++) {
+      const num = carPark[y][x];
+      // Skip empty spaces
+      if (num === 0) continue;
+      
+      const tl = searchCarTopLeftFromPos({x: x, y: y}, carPark)!;
+      const br = searchCarBottomRight({x: x, y: y})!;
+      if (tl.x === br.x && tl.y === br.y) {
+        console.error("All cars need a length of at least 2!");
+        return false;
+      }
+      if (!cars[num]) {
+        // Player car must be placed in exit row
+        if (num === 1 && y !== exitY) {
+          console.error("Your car (car 1) must be placed in the exit row (row 2) of the parking lot!");
+          return false;
+        }
+        // Register car
+        cars[num] = { topLeft: tl, bottomRight: br };
+        if (br.x > tl.x && br.y === tl.y) {
+          availableCarsHorizontal.add(num);
+        } else if (br.x === tl.x && br.y > tl.y) {
+          availableCarsVertical.add(num);
+        } else {
+          console.error(`Car ${num} has an invalid shape!`);
+          return false;
+        }
+      } else if (cars[num].topLeft.x !== tl.x || cars[num].topLeft.y !== tl.y || 
+                cars[num].bottomRight.x !== br.x || cars[num].bottomRight.y !== br.y) {
+        // There is already a car with this number, but it has different positions
+        console.error(`Car ${num} has a wrong shape or exists multiple times!`);
+        return false;
+      }
+    }
+  }
+  if (!availableCarsHorizontal.has(1)) {
+    console.error("You need to place your own car (car 1) in the parking lot!");
+    return false;
+  }
+  // The algorithm should stop a search route if it has already been there before
+  const formerStates = new Set<string>();
+  formerStates.add(hashCarPark(carPark)); // Add the initial state
+
+  // Try every possible move with a deep copy of the car park
+  const recursionMove = (park: number[][], carNumber: number, direction: string, moves: string[]): string[] | false => {
+    // Make move and hash the state of the car park
+    const topLeft = searchCarTopLeft(carNumber, park);
+    // console.log(topLeft);
+    const bottomRight = searchCarBottomRight(topLeft!, park);
+    // console.log(bottomRight);
+    moveCar(topLeft!, bottomRight!, direction, park, false);
+    moves.push(`${carNumber}${direction}`);
+    // console.log(`Trying to move car ${carNumber} ${direction}...`);
+    // console.log(park);
+    const stateHash = hashCarPark(park);
+    if (formerStates.has(stateHash)) {
+      return false; // Already tried this state
+    }
+    formerStates.add(stateHash);
+    if (park[exitY][park[exitY].length - 1] === 1) {
+      return moves; // Found a solution, car 1 is at the exit
+    }
+
+    // Try moving every car in it's two possible directions
+    let result = [] as string[] | false;
+    for (const carNr of availableCarsHorizontal) {
+      result = recursionMove(park.map(row => [...row]), carNr, "a", [...moves]);
+      if (result) return result;
+      result = recursionMove(park.map(row => [...row]), carNr, "d", [...moves]);
+      if (result) return result;
+    }
+    for (const carNr of availableCarsVertical) {
+      result = recursionMove(park.map(row => [...row]), carNr, "w", [...moves]);
+      if (result) return result;
+      result = recursionMove(park.map(row => [...row]), carNr, "s", [...moves]);
+      if (result) return result;
+    }
+    return false; // No solution found from this state
+  };
+
+  // Start recursion
+  // Try moving every car in it's two possible directions
+  let result = [] as string[] | false;
+    for (const carNr of availableCarsHorizontal) {
+      result = recursionMove(carPark.map(row => [...row]), carNr, "a", []);
+      if (result) return result;
+      result = recursionMove(carPark.map(row => [...row]), carNr, "d", []);
+      if (result) return result;
+    }
+    for (const carNr of availableCarsVertical) {
+      result = recursionMove(carPark.map(row => [...row]), carNr, "w", []);
+      if (result) return result;
+      result = recursionMove(carPark.map(row => [...row]), carNr, "s", []);
+      if (result) return result;
+    }
+  return false;
 }
 
 function displayCarPark(cursor?: Pos) {
@@ -208,10 +324,10 @@ function displayCarPark(cursor?: Pos) {
   console.log("+%s+","-".repeat(carPark[0].length * 2 + 1));
 }
 
-function searchCarTopLeft(num: number): Pos | undefined {
-  for (let y = 0; y < carPark.length; y++) {
-    for (let x = 0; x < carPark[y].length; x++) {
-      if (carPark[y][x] === num) {
+function searchCarTopLeft(num: number, park: number[][] = carPark): Pos | undefined {
+  for (let y = 0; y < park.length; y++) {
+    for (let x = 0; x < park[y].length; x++) {
+      if (park[y][x] === num) {
         return { x, y };
       }
     }
@@ -219,31 +335,54 @@ function searchCarTopLeft(num: number): Pos | undefined {
   return undefined;
 }
 
-function searchCarBottomRight(pos: Pos): Pos | undefined {
+function searchCarBottomRight(pos: Pos, park: number[][] = carPark): Pos | undefined {
   // Check if the position is within bounds
-  if (pos.x < 0 || pos.y < 0 || pos.y >= carPark.length || pos.x >= carPark[pos.y].length) {
+  if (pos.x < 0 || pos.y < 0 || pos.y >= park.length || pos.x >= park[pos.y].length) {
     return undefined;
   }
   // Check if there is a car at the given position
-  const carNumber = carPark[pos.y][pos.x];
+  const carNumber = park[pos.y][pos.x];
   if (carNumber === 0) {
     return undefined;
   }
   // Check right
   let x = pos.x;
-  while (x < carPark[pos.y].length && carPark[pos.y][x] === carNumber) {
+  while (x < park[pos.y].length && park[pos.y][x] === carNumber) {
     x++; // this will step one too far
   }
   // Check down
   let y = pos.y;
-  while (y < carPark.length && carPark[y][pos.x] === carNumber) {
+  while (y < park.length && park[y][pos.x] === carNumber) {
     y++; // this will also step one too far
   }
   return { x: x - 1, y: y - 1 }; // Subtract one to get the last valid position 
 }
 
-function moveCar(topLeft: Pos, bottomRight: Pos, direction: string) {
-  const carNumber = carPark[topLeft.y][topLeft.x];
+function searchCarTopLeftFromPos(pos: Pos, park: number[][]): Pos | undefined {
+  // Check if the position is within bounds
+  if (pos.x < 0 || pos.y < 0 || pos.y >= park.length || pos.x >= park[pos.y].length) {
+    return undefined;
+  }
+  // Check if there is a car at the given position
+  const carNumber = park[pos.y][pos.x];
+  if (carNumber === 0) {
+    return undefined;
+  }
+  // Check left
+  let x = pos.x;
+  while (x > 0 && park[pos.y][x - 1] === carNumber) {
+    x--; // this will step one too far
+  }
+  // Check up
+  let y = pos.y;
+  while (y > 0 && park[y - 1][pos.x] === carNumber) {
+    y--; // this will also step one too far
+  }
+  return { x, y }; // Return the first valid position
+}
+
+function moveCar(topLeft: Pos, bottomRight: Pos, direction: string, park: number[][] = carPark, print: boolean = true) {
+  const carNumber = park[topLeft.y][topLeft.x];
   const dir = direction.charAt(0);
   const range = direction.length;
   let stepsMade = 0;
@@ -251,91 +390,91 @@ function moveCar(topLeft: Pos, bottomRight: Pos, direction: string) {
     switch (dir) {
       case 'w': // up
         if (topLeft.x !== bottomRight.x) {
-          console.error("You can only move a car up if it is vertical.");
+          if (print) console.error("You can only move a car up if it is vertical.");
           return;
         }
         if (topLeft.y === 0) {
-          console.error("You cannot move a car up if it is already at the top edge.");
+          if (print) console.error("You cannot move a car up if it is already at the top edge.");
           break;
         }
-        if (carPark[topLeft.y - 1][topLeft.x] !== 0) {
-          console.error("Another car is blocking your car");
+        if (park[topLeft.y - 1][topLeft.x] !== 0) {
+          if (print) console.error("Another car is blocking your car");
           break;
         }
-        carPark[topLeft.y - 1][topLeft.x] = carNumber;
-        carPark[bottomRight.y][bottomRight.x] = 0;
+        park[topLeft.y - 1][topLeft.x] = carNumber;
+        park[bottomRight.y][bottomRight.x] = 0;
         topLeft.y -= 1; // Update the topLeft position
         bottomRight.y -= 1; // Update the bottomRight position
         stepsMade += 1; // Increment steps made
         break;
       case 'a': // left
         if (topLeft.y !== bottomRight.y) {
-          console.error("You can only move a car left if it is horizontal.");
+          if (print) console.error("You can only move a car left if it is horizontal.");
           return;
         }
         if (topLeft.x === 0) {
-          console.error("You cannot move a car left if it is already at the left edge.");
+          if (print) console.error("You cannot move a car left if it is already at the left edge.");
           break;
         }
-        if (carPark[topLeft.y][topLeft.x - 1] !== 0) {
-          console.error("Another car is blocking your car");
+        if (park[topLeft.y][topLeft.x - 1] !== 0) {
+          if (print) console.error("Another car is blocking your car");
           break;
         }
-        carPark[topLeft.y][topLeft.x - 1] = carNumber;
-        carPark[bottomRight.y][bottomRight.x] = 0;
+        park[topLeft.y][topLeft.x - 1] = carNumber;
+        park[bottomRight.y][bottomRight.x] = 0;
         topLeft.x -= 1; // Update the topLeft position
         bottomRight.x -= 1; // Update the bottomRight position
         stepsMade += 1; // Increment steps made
         break;
       case 's': // down
         if (topLeft.x !== bottomRight.x) {
-          console.error("You can only move a car down if it is vertical.");
+          if (print) console.error("You can only move a car down if it is vertical.");
           return;
         }
-        if (bottomRight.y === carPark.length - 1) {
-          console.error("You cannot move a car down if it is already at the bottom edge.");
+        if (bottomRight.y === park.length - 1) {
+          if (print) console.error("You cannot move a car down if it is already at the bottom edge.");
           break;
         }
-        if (carPark[bottomRight.y + 1][topLeft.x] !== 0) {
-          console.error("Another car is blocking your car");
+        if (park[bottomRight.y + 1][topLeft.x] !== 0) {
+          if (print) console.error("Another car is blocking your car");
           break;
         }
-        carPark[bottomRight.y + 1][topLeft.x] = carNumber;
-        carPark[topLeft.y][topLeft.x] = 0;
+        park[bottomRight.y + 1][topLeft.x] = carNumber;
+        park[topLeft.y][topLeft.x] = 0;
         topLeft.y += 1; // Update the topLeft position
         bottomRight.y += 1; // Update the bottomRight position
         stepsMade += 1; // Increment steps made
         break;
       case 'd': // right
         if (topLeft.y !== bottomRight.y) {
-          console.error("You can only move a car right if it is horizontal.");
+          if (print) console.error("You can only move a car right if it is horizontal.");
           return;
         }
-        if (bottomRight.x === carPark[topLeft.y].length - 1) {
+        if (bottomRight.x === park[topLeft.y].length - 1) {
           if (topLeft.y === exitY) {
             if (carNumber === 1) {
               // Car is removed from the car park
-              carPark[topLeft.y][topLeft.x] = 0;
-              carPark[bottomRight.y][bottomRight.x] = 0;
+              park[topLeft.y][topLeft.x] = 0;
+              park[bottomRight.y][bottomRight.x] = 0;
               gameOver = true;
               turns += 1;
               return;
             } else {
-              console.error("You somehow managed to move the wrong car to the exit. Dev looses!");
+              if (print) console.error("You somehow managed to move the wrong car to the exit. Dev looses!");
               gameOver = true;
               turns += 1;
               return;
             }
           }
-          console.error("You cannot move a car right if it is already at the right edge.");
+          if (print) console.error("You cannot move a car right if it is already at the right edge.");
           break;
         }
-        if (carPark[topLeft.y][bottomRight.x + 1] !== 0) {
-          console.error("Another car is blocking your car");
+        if (park[topLeft.y][bottomRight.x + 1] !== 0) {
+          if (print) console.error("Another car is blocking your car");
           break;
         }
-        carPark[topLeft.y][bottomRight.x + 1] = carNumber;
-        carPark[topLeft.y][topLeft.x] = 0;
+        park[topLeft.y][bottomRight.x + 1] = carNumber;
+        park[topLeft.y][topLeft.x] = 0;
         topLeft.x += 1; // Update the topLeft position
         bottomRight.x += 1; // Update the bottomRight position
         stepsMade += 1; // Increment steps made
