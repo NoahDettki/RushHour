@@ -40,17 +40,42 @@ function ask(question: string): Promise<string> {
   }));
 }
 
+function colorize(text: string): string {
+  const output = [] as string[];
+  text.split("#").forEach((part, index) => {
+    if (index % 2 === 0) {
+      output.push(part); // Normal text
+    } else {
+      switch (part.charAt(0)) {
+        case 'w':
+          output.push(color[1](part.slice(1))); // White
+          break;
+        case 'g':
+          output.push(color[2](part.slice(1))); // Green
+          break;
+        case 'y':
+          output.push(color[3](part.slice(1))); // Yellow
+          break;
+        case 'r':
+          output.push(color[4](part.slice(1))); // Red
+          break;
+        default:
+          console.warn(`Unknown color code: ${part.charAt(0)}. Using default color.`);
+          output.push(part.slice(1)); // Default color
+          break;
+      }
+    }
+  });
+  return output.join("");
+}
+
 function welcome() {
-  console.log(`\n${color[3]("~~")} ${color[1](" Rush Hour ")} ${color[3]("~~")}`);
+  console.log(colorize("\n#y~~# #wRush Hour# #y~~#"));
   console.log("Oh no! Your car is stuck in a parking lot and you need to get it out!");
-  console.log(
-    `Move your car (${color[3]("1")}) or the other cars (${color[3]("2")}-${color[3]("15")}) to make space for your car`
-  );
-  console.log("to exit the parking lot on the right side.  " +
-    `Use '${color[3]("w")}', '${color[3]("a")}', '${color[3]("s")}', '${color[3]("d")}' to`
-  );
+  console.log(colorize(`Move your car (#y1#) or the other cars (#y2#-#y15#) to make space for your car`));
+  console.log(colorize("to exit the parking lot on the right side.  Use '#yw#', '#ya#', '#ys#', '#yd#' to"));
   console.log(`move the cars up, left, down, and right respectively.`);
-  console.log(`${color[3]("3dd")} will move car 3 down twice for example.\n`);
+  console.log(colorize("#y3dd# will move car 3 down twice for example.\n"));
 }
 
 function loadLevels() {
@@ -91,6 +116,12 @@ function displayScores() {
       console.log(`Level ${i.toString().padStart(2, " ")}:   -      ` + minText);
     }
   }
+}
+
+async function levelEditor() {
+  console.log("Welcome to the level editor!");
+  const eInput = await ask(colorize("(#ywasd#) move cursor, (#y1#-#y12#) add car, (#yr#)emove car or (#rq#)uit: "));
+  console.log("Quitting level editor.");
 }
 
 function displayCarPark() {
@@ -251,14 +282,14 @@ function moveCar(topLeft: Pos, bottomRight: Pos, direction: string) {
 }
 
 function gameOverMessage(levelNr: number) {
-  console.log(`You escaped from the parking lot in ${color[3](turns.toString())} turns!`);
+  console.log(colorize(`You escaped from the parking lot in #y${turns.toString()}# turns!`));
   const currentScore = scores[levelNr];
   if (!currentScore || currentScore > turns) {
     console.log("That's a new high score!");
     scores[levelNr] = turns;
     writeFileSync(scoresFile, JSON.stringify(scores, null, 2), "utf-8");
   } else if (currentScore) {
-    console.log(`Your best score was ${color[3](currentScore.toString())} turns.`);
+    console.log(`Your best score was #y${currentScore.toString()}# turns.`);
   }
 }
 
@@ -271,11 +302,14 @@ async function main() {
     gameOver = false;
     turns = 0;
     // Ask player which level to play
-    const levelChoice = await ask(
-      `Choose a level (${color[3]("1")}-${color[3](levels.length.toString())}), view (${color[3]("s")
-    })cores or (${color[4]("q")})uit: `);
+    const levelChoice = await ask(colorize(
+      `Choose a level (#y1#-#y${levels.length.toString()}#), view (#ys#)cores, open (#ye#)ditor or (#rq#)uit: `));
     if (levelChoice.toLowerCase() === "s") {
       displayScores();
+      continue;
+    }
+    if (levelChoice.toLowerCase() === "e") {
+      await levelEditor();
       continue;
     }
     if (levelChoice.toLowerCase() === "q") {
@@ -290,10 +324,9 @@ async function main() {
     carPark = levels[Number(levelChoice) - 1].map(row => [...row]); // Deep copy the level array
     // Start game loop
     while (!gameOver) {
-      // Display the car park
       displayCarPark();
       // Ask for the next turn
-      const nextTurn = await ask(`Turn ${turns + 1}: Enter turn or (${color[4]("q")})uit: `);
+      const nextTurn = await ask(colorize(`Turn ${turns + 1}: Enter turn or (#rq#)uit: `));
       // Maybe the player wants to quit
       if (nextTurn.toLowerCase() === "q") {
         console.log("Quitting the level.");
@@ -322,11 +355,12 @@ async function main() {
         console.error(`Dev: you messed up. searchCarBottomRight returned undefined`);
         continue;
       }
-      // Move car
+      
       moveCar(topLeftCarPos, bottomRightCarPos, directionInput)
 
       // Safety break approved by Noah (he's almost a real developer now)
       // break; whoops not so save anymore haha
+
     } // while(!gameOver) also broken by quitting a level
     if (gameOver) {
       displayCarPark();
