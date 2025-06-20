@@ -240,7 +240,7 @@ async function main() {
     })cores or (${color[4]("q")})uit: `);
     if (levelChoice.toLowerCase() === "s") {
       for (let i = 1; i <= levels.length; i++) {
-        const minText = ` (min: ${levelMinTurns[i - 1].toString().padStart(2, " ")})`;
+        const minText = color[14](` (min: ${levelMinTurns[i - 1].toString().padStart(2, " ")})`);
         if (scores[i]) {
           let perfect = levelMinTurns[i - 1] >= scores[i]; // >= because the player may find an even better solution
           console.log(`Level ${i.toString().padStart(2, " ")}: ${
