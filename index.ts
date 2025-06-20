@@ -25,6 +25,7 @@ const color: { [key: number]: (text: string) => string } = {
 const levelDir = "./levels";
 const scoresFile = "scores.json";
 const levels = [] as number[][][];
+const levelMinTurns = [] as number[];
 let scores = {} as { [key: string]: number };
 let carPark = [] as number[][];
 const exitY = 2;
@@ -211,10 +212,15 @@ async function main() {
   const files = readdirSync(levelDir);
   for (const file of files) {
     const content = readFileSync(join(levelDir, file), "utf-8");
-    const level = content.split(/\r?\n/).map(line => {
-      return line.split("").map(char => parseInt(char, 16));
-    });
-    levels.push(level);
+    const level = content.split(/\r?\n/).map((line, i) => {
+      if (i === content.split(/\r?\n/).length - 1) {
+        levelMinTurns.push(Number(line.trim()));
+        return undefined;
+      } else {
+        return line.split("").map(char => parseInt(char, 16));
+      }
+    }).filter(line => line !== undefined);
+    levels.push(level as number[][]);
   }
   // Load scores
   if (existsSync(scoresFile)) {
@@ -230,7 +236,22 @@ async function main() {
     turns = 0;
     // Ask player which level to play
     const levelChoice = await ask(
-      `Choose a level (${color[3]("1")}-${color[3](levels.length.toString())}) or (${color[4]("q")})uit: `);
+      `Choose a level (${color[3]("1")}-${color[3](levels.length.toString())}), view (${color[3]("s")
+    })cores or (${color[4]("q")})uit: `);
+    if (levelChoice.toLowerCase() === "s") {
+      for (let i = 1; i <= levels.length; i++) {
+        const minText = ` (min: ${levelMinTurns[i - 1].toString().padStart(2, " ")})`;
+        if (scores[i]) {
+          let perfect = levelMinTurns[i - 1] >= scores[i]; // >= because the player may find an even better solution
+          console.log(`Level ${i.toString().padStart(2, " ")}: ${
+              color[perfect ? 2 : 3](scores[i].toString().padStart(3, " "))} turns` + (perfect ? "" : minText)
+          );
+        } else {
+          console.log(`Level ${i.toString().padStart(2, " ")}:   -      ` + minText);
+        }
+      }
+      continue;
+    }
     if (levelChoice.toLowerCase() === "q") {
       console.log("Quitting the game.");
       break;
