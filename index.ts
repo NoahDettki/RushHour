@@ -40,6 +40,59 @@ function ask(question: string): Promise<string> {
   }));
 }
 
+function welcome() {
+  console.log(`\n${color[3]("~~")} ${color[1](" Rush Hour ")} ${color[3]("~~")}`);
+  console.log("Oh no! Your car is stuck in a parking lot and you need to get it out!");
+  console.log(
+    `Move your car (${color[3]("1")}) or the other cars (${color[3]("2")}-${color[3]("15")}) to make space for your car`
+  );
+  console.log("to exit the parking lot on the right side.  " +
+    `Use '${color[3]("w")}', '${color[3]("a")}', '${color[3]("s")}', '${color[3]("d")}' to`
+  );
+  console.log(`move the cars up, left, down, and right respectively.`);
+  console.log(`${color[3]("3dd")} will move car 3 down twice for example.\n`);
+}
+
+function loadLevels() {
+  const files = readdirSync(levelDir);
+  for (const file of files) {
+    const content = readFileSync(join(levelDir, file), "utf-8");
+    const level = content.split(/\r?\n/).map((line, i) => {
+      if (i === content.split(/\r?\n/).length - 1) {
+        levelMinTurns.push(Number(line.trim()));
+        return undefined;
+      } else {
+        return line.split("").map(char => parseInt(char, 16));
+      }
+    }).filter(line => line !== undefined);
+    levels.push(level as number[][]);
+  }
+}
+
+function loadScores() {
+  if (existsSync(scoresFile)) {
+    const raw = readFileSync(scoresFile, "utf-8");
+    scores = JSON.parse(raw);
+  } else {
+    scores = {};
+    writeFileSync(scoresFile, JSON.stringify(scores, null, 2), "utf-8");
+  }
+}
+
+function displayScores() {
+  for (let i = 1; i <= levels.length; i++) {
+    const minText = color[14](` (min: ${levelMinTurns[i - 1].toString().padStart(2, " ")})`);
+    if (scores[i]) {
+      let perfect = levelMinTurns[i - 1] >= scores[i]; // >= because the player may find an even better solution
+      console.log(`Level ${i.toString().padStart(2, " ")}: ${
+          color[perfect ? 2 : 3](scores[i].toString().padStart(3, " "))} turns` + (perfect ? "" : minText)
+      );
+    } else {
+      console.log(`Level ${i.toString().padStart(2, " ")}:   -      ` + minText);
+    }
+  }
+}
+
 function displayCarPark() {
   // When the game is over, the player's car will be drawn outside the car park
   console.log("+%s+","-".repeat(carPark[0].length * 2 + 1));
@@ -197,39 +250,22 @@ function moveCar(topLeft: Pos, bottomRight: Pos, direction: string) {
   return;
 }
 
-async function main() {
-  console.log(`\n${color[3]("~~")} ${color[1](" Rush Hour ")} ${color[3]("~~")}`);
-  console.log("Oh no! Your car is stuck in a parking lot and you need to get it out!");
-  console.log(
-    `Move your car (${color[3]("1")}) or the other cars (${color[3]("2")}-${color[3]("15")}) to make space for your car`
-  );
-  console.log("to exit the parking lot on the right side.  " +
-    `Use '${color[3]("w")}', '${color[3]("a")}', '${color[3]("s")}', '${color[3]("d")}' to`
-  );
-  console.log(`move the cars up, left, down, and right respectively.`);
-  console.log(`${color[3]("3dd")} will move car 3 down twice for example.\n`);
-  // Load levels
-  const files = readdirSync(levelDir);
-  for (const file of files) {
-    const content = readFileSync(join(levelDir, file), "utf-8");
-    const level = content.split(/\r?\n/).map((line, i) => {
-      if (i === content.split(/\r?\n/).length - 1) {
-        levelMinTurns.push(Number(line.trim()));
-        return undefined;
-      } else {
-        return line.split("").map(char => parseInt(char, 16));
-      }
-    }).filter(line => line !== undefined);
-    levels.push(level as number[][]);
-  }
-  // Load scores
-  if (existsSync(scoresFile)) {
-    const raw = readFileSync(scoresFile, "utf-8");
-    scores = JSON.parse(raw);
-  } else {
-    scores = {};
+function gameOverMessage(levelNr: number) {
+  console.log(`You escaped from the parking lot in ${color[3](turns.toString())} turns!`);
+  const currentScore = scores[levelNr];
+  if (!currentScore || currentScore > turns) {
+    console.log("That's a new high score!");
+    scores[levelNr] = turns;
     writeFileSync(scoresFile, JSON.stringify(scores, null, 2), "utf-8");
+  } else if (currentScore) {
+    console.log(`Your best score was ${color[3](currentScore.toString())} turns.`);
   }
+}
+
+async function main() {
+  welcome();
+  loadLevels();
+  loadScores();
   // Menu
   while (true) {
     gameOver = false;
@@ -239,17 +275,7 @@ async function main() {
       `Choose a level (${color[3]("1")}-${color[3](levels.length.toString())}), view (${color[3]("s")
     })cores or (${color[4]("q")})uit: `);
     if (levelChoice.toLowerCase() === "s") {
-      for (let i = 1; i <= levels.length; i++) {
-        const minText = color[14](` (min: ${levelMinTurns[i - 1].toString().padStart(2, " ")})`);
-        if (scores[i]) {
-          let perfect = levelMinTurns[i - 1] >= scores[i]; // >= because the player may find an even better solution
-          console.log(`Level ${i.toString().padStart(2, " ")}: ${
-              color[perfect ? 2 : 3](scores[i].toString().padStart(3, " "))} turns` + (perfect ? "" : minText)
-          );
-        } else {
-          console.log(`Level ${i.toString().padStart(2, " ")}:   -      ` + minText);
-        }
-      }
+      displayScores();
       continue;
     }
     if (levelChoice.toLowerCase() === "q") {
@@ -301,17 +327,10 @@ async function main() {
 
       // Safety break approved by Noah (he's almost a real developer now)
       // break; whoops not so save anymore haha
-    } // while(!gameOver)
+    } // while(!gameOver) also broken by quitting a level
     if (gameOver) {
       displayCarPark();
-      console.log(`You escaped from the parking lot in ${color[3](turns.toString())} turns!`);
-      if (!scores[Number(levelChoice)] || scores[Number(levelChoice)] > turns) {
-        console.log("That's a new high score!");
-        scores[Number(levelChoice)] = turns;
-        writeFileSync(scoresFile, JSON.stringify(scores, null, 2), "utf-8");
-      } else if (scores[Number(levelChoice)]) {
-        console.log(`Your best score was ${color[3](scores[Number(levelChoice)].toString())} turns.`);
-      }
+      gameOverMessage(Number(levelChoice));
     }
   } // while(True)
 }
