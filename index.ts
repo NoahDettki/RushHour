@@ -240,7 +240,7 @@ async function main() {
       continue;
     }
     // Load the chosen level
-    carPark = levels[Number(levelChoice) - 1];
+    carPark = levels[Number(levelChoice) - 1].map(row => [...row]); // Deep copy the level array
     // Start game loop
     while (!gameOver) {
       // Display the car park
