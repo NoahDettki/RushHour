@@ -237,6 +237,7 @@ function validateLevel() {
   }
   // The algorithm should stop a search route if it has already been there before
   const formerStates = new Set<string>();
+  const turnsToState = {} as { [key: string]: number };
   formerStates.add(hashCarPark(carPark)); // Add the initial state
 
   // Try every possible move with a deep copy of the car park
@@ -251,47 +252,53 @@ function validateLevel() {
     // console.log(`Trying to move car ${carNumber} ${direction}...`);
     // console.log(park);
     const stateHash = hashCarPark(park);
-    if (formerStates.has(stateHash)) {
+    if (formerStates.has(stateHash) && turnsToState[stateHash] <= moves.length) {
       return false; // Already tried this state
     }
     formerStates.add(stateHash);
+    turnsToState[stateHash] = moves.length;
     if (park[exitY][park[exitY].length - 1] === 1) {
       return moves; // Found a solution, car 1 is at the exit
+      //TODO: Noah, du musst die moves hier schon flatten, bevor du sie returnst, weil die
+      // die anderen Paths hiermit verglichen werden. Wenn du das machst, wird der Algorithmus
+      // auch den kürzesten Weg finden. (denke ich)
     }
 
     // Try moving every car in it's two possible directions
     let result = [] as string[] | false;
+    let bestResult: string[] | false = false;
     for (const carNr of availableCarsHorizontal) {
       result = recursionMove(park.map(row => [...row]), carNr, "a", [...moves]);
-      if (result) return result;
+      if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
       result = recursionMove(park.map(row => [...row]), carNr, "d", [...moves]);
-      if (result) return result;
+      if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
     }
     for (const carNr of availableCarsVertical) {
       result = recursionMove(park.map(row => [...row]), carNr, "w", [...moves]);
-      if (result) return result;
+      if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
       result = recursionMove(park.map(row => [...row]), carNr, "s", [...moves]);
-      if (result) return result;
+      if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
     }
-    return false; // No solution found from this state
+    return bestResult;
   };
 
   // Start recursion
   // Try moving every car in it's two possible directions
   let result = [] as string[] | false;
+  let bestResult: string[] | false = false;
     for (const carNr of availableCarsHorizontal) {
       result = recursionMove(carPark.map(row => [...row]), carNr, "a", []);
-      if (result) return result;
+      if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
       result = recursionMove(carPark.map(row => [...row]), carNr, "d", []);
-      if (result) return result;
+      if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
     }
     for (const carNr of availableCarsVertical) {
       result = recursionMove(carPark.map(row => [...row]), carNr, "w", []);
-      if (result) return result;
+      if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
       result = recursionMove(carPark.map(row => [...row]), carNr, "s", []);
-      if (result) return result;
+      if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
     }
-  return false;
+  return bestResult;
 }
 
 function displayCarPark(cursor?: Pos) {
