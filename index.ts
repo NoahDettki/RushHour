@@ -119,21 +119,92 @@ function displayScores() {
 }
 
 async function levelEditor() {
-  console.log("Welcome to the level editor!");
-  const eInput = await ask(colorize("(#ywasd#) move cursor, (#y1#-#y12#) add car, (#yr#)emove car or (#rq#)uit: "));
+  console.log("\nWelcome to the level editor!");
+  carPark = Array.from({ length: 6 }, () => Array(6).fill(0));
+  let cursor: Pos = { x: 0, y: 0 };
+  while (true) {
+    displayCarPark(cursor);
+    const eInput = await ask(
+      colorize("(#ywasd#) move cursor, (#y1#-#y15#) add car, (#yr#)emove car, (#yv#)alidate or (#rq#)uit: ")
+    );
+    // Check if input consists of only move commands
+    let smartInput = true;
+    const inputParts = eInput.match(/([wasdr]+|\d+)/g);
+    for (const part of inputParts || []) {
+      if (!isNaN(Number(part))) {
+        if (Number(part) < 1 || Number(part) > 15) {
+          smartInput = false;
+          break; // Invalid car number
+        }
+      }
+    }
+    if (smartInput && inputParts) {
+      inputParts.forEach(part => {
+        if (!isNaN(Number(part))) {
+          carPark[cursor.y][cursor.x] = Number(part);
+        } else {
+          for (const char of part) {
+            switch (char) {
+              case 'w':
+                if (cursor.y > 0) cursor.y--;
+                break;
+              case 'a':
+                if (cursor.x > 0) cursor.x--;
+                break;
+              case 's':
+                if (cursor.y < carPark.length - 1) cursor.y++;
+                break;
+              case 'd':
+                if (cursor.x < carPark[cursor.y].length - 1) cursor.x++;
+                break;
+              case 'r':
+                carPark[cursor.y][cursor.x] = 0;
+                break;
+            }
+          }
+        }
+      });
+      continue;
+    }
+    if (eInput.toLowerCase() === "v") {
+      console.log("Not yet implemented");
+      continue;
+    }
+    if (eInput.toLowerCase() === "q") {
+      break; // Quit the level editor
+    }
+    console.error("Invalid input");
+  }
   console.log("Quitting level editor.");
 }
 
-function displayCarPark() {
-  // When the game is over, the player's car will be drawn outside the car park
+function displayCarPark(cursor?: Pos) {
+  // Top border
   console.log("+%s+","-".repeat(carPark[0].length * 2 + 1));
-  carPark.forEach((row, i) => {
+  carPark.forEach((row, y) => {
     console.log(
+      // Left border
       "|" + 
-      row.map(num => num === 0 ? " ." : color[num](num.toString().padStart(2, " ").replace(/1(.)/, "¹$1"))).join("") +
-      (i === exitY ? " ." : " |") + (i === exitY && gameOver ? color[1](" 1 1") : "")
+      // One line of the car park
+      row.map((num, x) => {
+        const str = num.toString();
+        if (cursor && cursor.y === y) {
+          if (cursor.x === x) {
+            return num === 0 ? (color[1]("[") + ".") : (color[1]("[") + color[num](str[str.length - 1]));
+          } else if (cursor.x + 1 === x) {
+            return num === 0 ? (color[1]("]") + ".") : (color[1]("]") + color[num](str[str.length - 1]));
+          }
+        }
+        return num === 0 ? " ." : color[num](str.padStart(2, " ").replace(/1(.)/, "¹$1"))
+      }).join("") +
+      // Right border or exit of the car park
+      (cursor && cursor.y === y && cursor.x === carPark.length - 1 ? color[1]("]") : " ") +
+      (y === exitY ? "." : "|") + 
+      // Display the player's car outside of the car park when the game is over
+      (y === exitY && gameOver ? color[1](" 1 1") : "")
     );
   });
+  // Bottom border
   console.log("+%s+","-".repeat(carPark[0].length * 2 + 1));
 }
 
