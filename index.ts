@@ -281,12 +281,16 @@ async function main() {
       // Safety break approved by Noah (he's almost a real developer now)
       // break; whoops not so save anymore haha
     } // while(!gameOver)
-    displayCarPark();
-    console.log(`You escaped from the parking lot in ${color[3](turns.toString())} turns!`);
-    if (!scores[Number(levelChoice)] || scores[Number(levelChoice)] > turns) {
-      console.log("That's a new high score!");
-      scores[Number(levelChoice)] = turns;
-      writeFileSync(scoresFile, JSON.stringify(scores, null, 2), "utf-8");
+    if (gameOver) {
+      displayCarPark();
+      console.log(`You escaped from the parking lot in ${color[3](turns.toString())} turns!`);
+      if (!scores[Number(levelChoice)] || scores[Number(levelChoice)] > turns) {
+        console.log("That's a new high score!");
+        scores[Number(levelChoice)] = turns;
+        writeFileSync(scoresFile, JSON.stringify(scores, null, 2), "utf-8");
+      } else if (scores[Number(levelChoice)]) {
+        console.log(`Your best score was ${color[3](scores[Number(levelChoice)].toString())} turns.`);
+      }
     }
   } // while(True)
 }
