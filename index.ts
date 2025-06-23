@@ -4,6 +4,8 @@ import { join } from "path";
 import chalk from "chalk";
 
 type Pos = { x: number, y: number };
+type Car = { nr: number, topLeft: Pos, bottomRight: Pos, isHorizontal: boolean };
+type CarPark = { grid: number[][], cars: Car[] };
 const color: { [key: number]: (text: string) => string } = {
   1: chalk.whiteBright,
   2: chalk.green,
@@ -167,14 +169,28 @@ async function levelEditor() {
       continue;
     }
     if (eInput.toLowerCase() === "v") {
-      const result = validateLevel();
+      // First make sure the level has a valid structure
+      const result = validateCarPark(carPark);
       if (result) {
-        console.log(colorize("#gLevel is valid!#"));
-        console.log(result);
+        console.log(colorize("#gLevel has a valid structure!#"));
+      } else {
+        console.error("Level has an invalid structure!");
+        continue;
       }
-      else {
-        console.error("Invalid level!");
+      // Then make sure the level is solvable
+      const solution = findSolution(result);
+      if (solution) {
+        console.log(colorize(`#gLevel is solvable in ${solution.length} turns!#`));
+        console.log("Solution: " + solution.join(", "));
+      } else {
+        console.error("Level is not solvable!");
+        continue;
       }
+      // Save the level to a file
+      const levelName = "custom_level_" + (readdirSync(levelDir).length + 1) + ".txt";
+      const levelContent = carPark.map(row => row.map(num => num.toString(16)).join("")).join("\n") + "\n" + solution.length;
+      writeFileSync(join(levelDir, levelName), levelContent, "utf-8");
+      console.log(`Level saved as ${levelName} in the levels directory.`);
       continue;
     }
     if (eInput.toLowerCase() === "q") {
@@ -185,120 +201,251 @@ async function levelEditor() {
   console.log("Quitting level editor.");
 }
 
-function hashCarPark(park: number[][]): string {
-  return park.map(row => row.join(" ")).join("\n");
-}
+/**
+ * This function trys to create a valid car park from the given grid. If all cars have a valid shape and the player's
+ * car is placed in the exit row and no car is placed twice, it returns a CarPark object.
+ * @param grid The grid of the car park
+ * @return A CarPark object if the grid is valid, undefined otherwise
+ */
+function validateCarPark(grid: number[][]): CarPark | undefined {
+  const cars = [] as Car[];
+  let hasPlayerCar = false;
 
-function validateLevel() {
-  // Detect all car numbers in the park
-  // (So that the algorithm does not try to move cars that are not there)
-  const cars = {} as { [key: number]: Record<string, Pos> }
-  const availableCarsHorizontal = new Set<number>();
-  const availableCarsVertical = new Set<number>();
-  for (let y = 0; y < carPark.length; y++) {
-    for (let x = 0; x < carPark[0].length; x++) {
-      const num = carPark[y][x];
+  for (let y = 0; y < grid.length; y++) {
+    for (let x = 0; x < grid[0].length; x++) {
+      const nr = grid[y][x];
       // Skip empty spaces
-      if (num === 0) continue;
-      
-      const tl = searchCarTopLeftFromPos({x: x, y: y}, carPark)!;
-      const br = searchCarBottomRight({x: x, y: y})!;
+      if (nr === 0) continue;
+
+      // Find car's ends
+      const tl = searchTopLeftOfCar({x: x, y: y}, grid);
+      const br = searchBottomRightOfCar({x: x, y: y}, grid);
+
+      // Check car length
       if (tl.x === br.x && tl.y === br.y) {
         console.error("All cars need a length of at least 2!");
-        return false;
+        return undefined;
       }
-      if (!cars[num]) {
-        // Player car must be placed in exit row
-        if (num === 1 && y !== exitY) {
+
+      // Check if car is unique on the grid (or has a weird shape)
+      const sameCar = cars.find(car => car.nr === nr);
+      if (sameCar) {
+        if (sameCar.topLeft.x !== tl.x || sameCar.topLeft.y !== tl.y || 
+            sameCar.bottomRight.x !== br.x || sameCar.bottomRight.y !== br.y) {
+          // There is already a car with this number, but it has different positions
+          console.error(`Car ${nr} has a wrong shape or exists multiple times!`);
+          return undefined;
+        } else continue; // Car already registered, continue to next cell
+      }
+
+      // Player car must be placed in exit row
+      if (nr === 1) {
+        hasPlayerCar = true;
+        if ( y !== exitY) {
           console.error("Your car (car 1) must be placed in the exit row (row 2) of the parking lot!");
-          return false;
+          return undefined;
         }
-        // Register car
-        cars[num] = { topLeft: tl, bottomRight: br };
-        if (br.x > tl.x && br.y === tl.y) {
-          availableCarsHorizontal.add(num);
-        } else if (br.x === tl.x && br.y > tl.y) {
-          availableCarsVertical.add(num);
-        } else {
-          console.error(`Car ${num} has an invalid shape!`);
-          return false;
-        }
-      } else if (cars[num].topLeft.x !== tl.x || cars[num].topLeft.y !== tl.y || 
-                cars[num].bottomRight.x !== br.x || cars[num].bottomRight.y !== br.y) {
-        // There is already a car with this number, but it has different positions
-        console.error(`Car ${num} has a wrong shape or exists multiple times!`);
-        return false;
       }
-    }
-  }
-  if (!availableCarsHorizontal.has(1)) {
+
+      // Check if car has a valid alignment
+      if (br.x !== tl.x && br.y !== tl.y) {
+        console.error(`Car ${nr} has an invalid shape! It must be either horizontal or vertical.`);
+        return undefined;
+      }
+
+      // Register car
+      cars.push({ nr: nr, topLeft: tl, bottomRight: br, isHorizontal: br.x > tl.x });
+    } // end of x-loop
+  } // end of y-loop
+
+  // Check if player's car is present
+  if (!hasPlayerCar) {
     console.error("You need to place your own car (car 1) in the parking lot!");
-    return false;
+    return undefined;
   }
+
+  // Return a structurally validated car park
+  return { grid: grid, cars: cars };
+}
+
+function findSolution(park: CarPark): string[] | undefined {
   // The algorithm should stop a search route if it has already been there before
   const formerStates = new Set<string>();
   const turnsToState = {} as { [key: string]: number };
-  formerStates.add(hashCarPark(carPark)); // Add the initial state
 
-  // Try every possible move with a deep copy of the car park
-  const recursionMove = (park: number[][], carNumber: number, direction: string, moves: string[]): string[] | false => {
+  // Add the initial state
+  formerStates.add(hashCarPark(park));
+  turnsToState[hashCarPark(park)] = 0;
+
+  console.log("This may take up to a minute... (because my algorithm is not very efficient)");
+  return recursiveSolutionSearch(park, [], formerStates, turnsToState);
+}
+
+function recursiveSolutionSearch(
+  park: CarPark, 
+  moves: string[], 
+  formerStates: Set<string>, 
+  movesToState: { [key: string]: number },
+  carNr: number | undefined = undefined,
+  direction: string = "",
+): string[] | undefined {
+  if (carNr) { // Otherwise jump directly to the branching part
+    const car = park.cars.find(c => c.nr === carNr)!;
     // Make move and hash the state of the car park
-    const topLeft = searchCarTopLeft(carNumber, park);
-    // console.log(topLeft);
-    const bottomRight = searchCarBottomRight(topLeft!, park);
-    // console.log(bottomRight);
-    moveCar(topLeft!, bottomRight!, direction, park, false);
-    moves.push(`${carNumber}${direction}`);
-    // console.log(`Trying to move car ${carNumber} ${direction}...`);
-    // console.log(park);
+    if (!tryMoveCar(car, park, direction)) {
+      // The car cannot be moved in this direction
+      return undefined;
+    }
+    // console.log(park.grid);
+    pushMoveSimplified(moves, carNr, direction);
     const stateHash = hashCarPark(park);
-    if (formerStates.has(stateHash) && turnsToState[stateHash] <= moves.length) {
-      return false; // Already tried this state
-    }
-    formerStates.add(stateHash);
-    turnsToState[stateHash] = moves.length;
-    if (park[exitY][park[exitY].length - 1] === 1) {
-      return moves; // Found a solution, car 1 is at the exit
-      //TODO: Noah, du musst die moves hier schon flatten, bevor du sie returnst, weil die
-      // die anderen Paths hiermit verglichen werden. Wenn du das machst, wird der Algorithmus
-      // auch den kürzesten Weg finden. (denke ich)
-    }
+    if (formerStates.has(stateHash)) {
+      // The car park was in this state before...
 
-    // Try moving every car in it's two possible directions
-    let result = [] as string[] | false;
-    let bestResult: string[] | false = false;
-    for (const carNr of availableCarsHorizontal) {
-      result = recursionMove(park.map(row => [...row]), carNr, "a", [...moves]);
-      if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
-      result = recursionMove(park.map(row => [...row]), carNr, "d", [...moves]);
-      if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
+      /** Ok this one is tricky. If a possible path to this constellation was already found with the same number of
+       *  moves, it could still be worse than the current path. Here is an example:
+       *  Car 1 can move one step towards car 2 before being blocked.
+       *  First route:  Car 1 step, car 2 step out of the way, car 1 step further because no longer blocked
+       *  Second route: Car 2 step out of the way, car 1 step, car 1 step further because no longer blocked
+       *  The first route does not look worse at first glance, but the second route can be simplified to have car 1
+       *  take both steps at once, thus saving a step. This is only visible in hindsight.
+       * 
+       *  On the other hand, ignoring states with the same number of moves may result in an endless loop. Going further
+       *  down the recursion in that case is only ok if the very next move is the same car and direction as the last
+       *  move.
+       */
+      if (movesToState[stateHash] < moves.length) {
+        // ... with less moves (makes zero sense to go further)
+        return undefined;
+      } else if (movesToState[stateHash] === moves.length) {
+        // ... with the same number of moves (only makes sense if the next move is the same car and direction)
+        return recursiveSolutionSearch(copyCarPark(park), [...moves], formerStates, movesToState, carNr, direction);
+      }
+    } else {
+      formerStates.add(stateHash);
     }
-    for (const carNr of availableCarsVertical) {
-      result = recursionMove(park.map(row => [...row]), carNr, "w", [...moves]);
-      if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
-      result = recursionMove(park.map(row => [...row]), carNr, "s", [...moves]);
-      if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
+    movesToState[stateHash] = moves.length;
+    // When car 1 is at the exit, the puzzle is solved and the level is therefore valid
+    if (park.grid[exitY][park.grid[exitY].length - 1] === 1) {
+      return moves;
     }
-    return bestResult;
-  };
+  }
+  // Try every possible move with a deep copy of the car park
+  let result = [] as string[] | undefined;
+  let bestResult: string[] | undefined = undefined;
 
-  // Start recursion
-  // Try moving every car in it's two possible directions
-  let result = [] as string[] | false;
-  let bestResult: string[] | false = false;
-    for (const carNr of availableCarsHorizontal) {
-      result = recursionMove(carPark.map(row => [...row]), carNr, "a", []);
+  // Making the same move again is preferred because it can lead to a shorter solution
+  if (carNr) {
+    result = recursiveSolutionSearch(copyCarPark(park), [...moves], formerStates, movesToState, carNr, direction);
+    if (result) bestResult = result;
+  }
+
+  for (const c of park.cars) {
+    if (c.nr === carNr) continue; // Skip the car that was just moved
+    if (c.isHorizontal) {
+      // Horizontal cars
+      result = recursiveSolutionSearch(copyCarPark(park), [...moves], formerStates, movesToState, c.nr, "a");
       if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
-      result = recursionMove(carPark.map(row => [...row]), carNr, "d", []);
+      result = recursiveSolutionSearch(copyCarPark(park), [...moves], formerStates, movesToState, c.nr, "d");
+      if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
+    } else {
+      // Vertical cars
+      result = recursiveSolutionSearch(copyCarPark(park), [...moves], formerStates, movesToState, c.nr, "w");
+      if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
+      result = recursiveSolutionSearch(copyCarPark(park), [...moves], formerStates, movesToState, c.nr, "s");
       if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
     }
-    for (const carNr of availableCarsVertical) {
-      result = recursionMove(carPark.map(row => [...row]), carNr, "w", []);
-      if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
-      result = recursionMove(carPark.map(row => [...row]), carNr, "s", []);
-      if (result && (!bestResult || result.length < bestResult.length)) bestResult = result;
-    }
+  }
   return bestResult;
+}
+
+/**
+ * This function hashes a car park object.
+ * @param park The car park to hash
+ * @returns a single string that represents the car park's grid.
+ */
+function hashCarPark(park: CarPark): string {
+  return park.grid.map(row => row.join(" ")).join("|");
+}
+
+/**
+ * Deep copies a car park object, including its grid and cars.
+ * @param park The car park to copy
+ * @returns A deep copy of a car park
+ */
+function copyCarPark(park: CarPark): CarPark {
+  return {
+    grid: park.grid.map(row => [...row]),
+    cars: park.cars.map(car => ({
+      nr: car.nr,
+      topLeft: { ...car.topLeft },
+      bottomRight: { ...car.bottomRight },
+      isHorizontal: car.isHorizontal
+    }))
+  }
+}
+
+function pushMoveSimplified(moves: string[], carNr: number, direction: string) {
+  const lastMove = moves[moves.length - 1];
+  if (lastMove && lastMove.startsWith(carNr.toString()) && lastMove.endsWith(direction)) {
+    // If the last move is the same car and direction, append the direction
+    moves[moves.length - 1] += direction;
+  } else {
+    // Else add the move for the other car
+    moves.push(`${carNr}${direction}`);
+  }
+}
+
+function tryMoveCar(car: Car, park: CarPark, direction: string): boolean {
+  switch (direction) {
+    case 'w': // up
+      if (isEmptyPosition(park.grid, { x: car.topLeft.x, y: car.topLeft.y - 1 })) {
+        // Update grid
+        park.grid[car.topLeft.y - 1][car.topLeft.x] = car.nr;
+        park.grid[car.bottomRight.y][car.bottomRight.x] = 0;
+        // Update car
+        car.topLeft.y -= 1;
+        car.bottomRight.y -= 1;
+        return true;
+      }
+      return false;
+    case 'a': // left
+      if (isEmptyPosition(park.grid, { x: car.topLeft.x - 1, y: car.topLeft.y })) {
+        // Update grid
+        park.grid[car.topLeft.y][car.topLeft.x - 1] = car.nr;
+        park.grid[car.bottomRight.y][car.bottomRight.x] = 0;
+        // Update car
+        car.topLeft.x -= 1;
+        car.bottomRight.x -= 1;
+        return true;
+      }
+      return false;
+    case 's': // down
+      if (isEmptyPosition(park.grid, { x: car.bottomRight.x, y: car.bottomRight.y + 1 })) {
+        // Update grid
+        park.grid[car.bottomRight.y + 1][car.bottomRight.x] = car.nr;
+        park.grid[car.topLeft.y][car.topLeft.x] = 0;
+        // Update car
+        car.topLeft.y += 1;
+        car.bottomRight.y += 1;
+        return true;
+      }
+      return false;
+    case 'd': // right
+      if (isEmptyPosition(park.grid, { x: car.bottomRight.x + 1, y: car.bottomRight.y })) {
+        // Update grid
+        park.grid[car.bottomRight.y][car.bottomRight.x + 1] = car.nr;
+        park.grid[car.topLeft.y][car.topLeft.x] = 0;
+        // Update car
+        car.topLeft.x += 1;
+        car.bottomRight.x += 1;
+        return true;
+      }
+      return false;
+    default:
+      console.error("Dev-Error: Invalid direction passed to tryMoveCar: ", direction);
+      return false;
+  }
 }
 
 function displayCarPark(cursor?: Pos) {
@@ -331,6 +478,51 @@ function displayCarPark(cursor?: Pos) {
   console.log("+%s+","-".repeat(carPark[0].length * 2 + 1));
 }
 
+/**
+ * This function finds the top-left position of a given car if it has a valid shape. ONLY enter a position that is save
+ * to have a car at it.
+ * @param pos The position of the car in the grid
+ * @param grid The grid of the car park
+ * @returns The top-left position of the car in the grid.
+ */
+function searchTopLeftOfCar(pos: Pos, grid: number[][]): Pos {
+  const carNumber = grid[pos.y][pos.x];
+  // Check left
+  let x = pos.x;
+  while (x > 0 && grid[pos.y][x - 1] === carNumber) {
+    x--;
+  }
+  // Check up
+  let y = pos.y;
+  while (y > 0 && grid[y - 1][pos.x] === carNumber) {
+    y--;
+  }
+  return { x: x, y: y };
+}
+
+/**
+ * This function finds the bottom-right position of a given car if it has a valid shape. ONLY enter a position that is
+ * save to have a car at it.
+ * @param pos The position of the car in the grid
+ * @param grid The grid of the car park
+ * @returns The bottom-right position of the car in the grid.
+ */
+function searchBottomRightOfCar(pos: Pos, grid: number[][]): Pos {
+  const carNumber = grid[pos.y][pos.x];
+  // Check right
+  let x = pos.x;
+  while (x < grid[pos.y].length - 1 && grid[pos.y][x + 1] === carNumber) {
+    x++;
+  }
+  // Check down
+  let y = pos.y;
+  while (y < grid.length - 1 && grid[y + 1][pos.x] === carNumber) {
+    y++;
+  }
+  return { x: x, y: y };
+}
+
+// old
 function searchCarTopLeft(num: number, park: number[][] = carPark): Pos | undefined {
   for (let y = 0; y < park.length; y++) {
     for (let x = 0; x < park[y].length; x++) {
@@ -342,6 +534,7 @@ function searchCarTopLeft(num: number, park: number[][] = carPark): Pos | undefi
   return undefined;
 }
 
+// old
 function searchCarBottomRight(pos: Pos, park: number[][] = carPark): Pos | undefined {
   // Check if the position is within bounds
   if (pos.x < 0 || pos.y < 0 || pos.y >= park.length || pos.x >= park[pos.y].length) {
@@ -365,29 +558,7 @@ function searchCarBottomRight(pos: Pos, park: number[][] = carPark): Pos | undef
   return { x: x - 1, y: y - 1 }; // Subtract one to get the last valid position 
 }
 
-function searchCarTopLeftFromPos(pos: Pos, park: number[][]): Pos | undefined {
-  // Check if the position is within bounds
-  if (pos.x < 0 || pos.y < 0 || pos.y >= park.length || pos.x >= park[pos.y].length) {
-    return undefined;
-  }
-  // Check if there is a car at the given position
-  const carNumber = park[pos.y][pos.x];
-  if (carNumber === 0) {
-    return undefined;
-  }
-  // Check left
-  let x = pos.x;
-  while (x > 0 && park[pos.y][x - 1] === carNumber) {
-    x--; // this will step one too far
-  }
-  // Check up
-  let y = pos.y;
-  while (y > 0 && park[y - 1][pos.x] === carNumber) {
-    y--; // this will also step one too far
-  }
-  return { x, y }; // Return the first valid position
-}
-
+// More than one move is possible
 function moveCar(topLeft: Pos, bottomRight: Pos, direction: string, park: number[][] = carPark, print: boolean = true) {
   const carNumber = park[topLeft.y][topLeft.x];
   const dir = direction.charAt(0);
@@ -498,6 +669,21 @@ function moveCar(topLeft: Pos, bottomRight: Pos, direction: string, park: number
   return;
 }
 
+/**
+ * This function checks if a given position is inside the car park and empty.
+ * @param park The car park represented as a 2D array
+ * @param position The position to which the car should be moved
+ * @return true if a car can be moved to the given position, false otherwise
+ */
+function isEmptyPosition(park: number[][], position: Pos): boolean {
+  // Check if the position is within bounds
+  if (position.x < 0 || position.y < 0 || position.y >= park.length || position.x >= park[position.y].length) {
+    return false;
+  }
+  // Check if the position is empty
+  return park[position.y][position.x] === 0;
+}
+
 function gameOverMessage(levelNr: number) {
   console.log(colorize(`You escaped from the parking lot in #y${turns.toString()}# turns!`));
   const currentScore = scores[levelNr];
@@ -506,7 +692,7 @@ function gameOverMessage(levelNr: number) {
     scores[levelNr] = turns;
     writeFileSync(scoresFile, JSON.stringify(scores, null, 2), "utf-8");
   } else if (currentScore) {
-    console.log(`Your best score was #y${currentScore.toString()}# turns.`);
+    console.log(colorize(`Your best score was #y${currentScore.toString()}# turns.`));
   }
 }
 
