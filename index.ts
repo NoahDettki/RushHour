@@ -25,6 +25,7 @@ const color: { [key: number]: (text: string) => string } = {
 }
 
 const levelDir = "./levels";
+const customLevelDir = "./custom_levels";
 const scoresFile = "scores.json";
 const levels = [] as number[][][];
 const levelMinTurns = [] as number[];
@@ -120,9 +121,48 @@ function displayScores() {
   }
 }
 
-async function levelEditor() {
-  console.log("\nWelcome to the level editor!");
-  carPark = Array.from({ length: 6 }, () => Array(6).fill(0));
+async function openLevelEditor() {
+  // The player needs to be able to open or delete one of his custom levels as well as creating a new one
+  console.log(colorize("\n#wWelcome to the level editor!#"));
+  while(true) {
+    const customLevels = readdirSync(customLevelDir);
+    const l = customLevels.length;
+    // Display all custom levels
+    if (l > 0) console.log("Your custom levels:");
+    for (let i = 0; i < l; i++) {
+      const levelName = customLevels[i];
+      console.log(colorize(`(#y${String(i + 1).padStart(String(l).length)}#) ${levelName}`));
+    }
+    const customLevelRange = l > 1 ? `#y1#-#y${l}#` : "#y1#";
+    const input = await ask(colorize(
+      (l > 0 ? `Edit custom level (${customLevelRange}), ` : "") + "(#yc#)reate new level or (#rq#)uit: "
+    ));
+    if (input.toLowerCase() === "q") {
+      break;
+    }
+    if (input.toLowerCase() === "c") {
+      carPark = Array.from({ length: 6 }, () => Array(6).fill(0));
+      await levelEditor();
+      continue;
+    }
+    if (!isNaN(Number(input)) && Number(input) >= 1 && Number(input) <= l) {
+      // Load the chosen custom level
+      const levelChoice = Number(input) - 1;
+      const levelName = customLevels[levelChoice];
+      const content = readFileSync(join(customLevelDir, levelName), "utf-8");
+      carPark = content.split(/\r?\n/).slice(0, -1).map(line => line.split("").map(char => parseInt(char, 16)));
+      await levelEditor(levelName);
+      break;
+    }
+  }
+}
+
+async function levelEditor(levelName?: string) {
+  if (levelName) {
+    console.log("\nEditing custom level: " + levelName);
+  } else {
+    console.log("\nEditing new custom level");
+  }
   let cursor: Pos = { x: 0, y: 0 };
   while (true) {
     displayCarPark(cursor);
@@ -186,11 +226,30 @@ async function levelEditor() {
         console.error("Level is not solvable!");
         continue;
       }
+      // Ask the player if he wants to save the level
+      const saveInput = await ask(colorize("Do you want to save this level? (#yy#/#rn#) "));
+      if (saveInput.toLowerCase() !== "y") {
+        console.error("Level not saved.");
+        continue;
+      }
+      // Ask the player for a level name if it is not already given
+      if (!levelName) {
+        const input = await ask("Enter a name for the level: ");
+        const newLevelName = input.trim();
+        if (newLevelName === "") {
+          console.error("Level name cannot be empty!");
+          continue;
+        }
+        if (newLevelName in readdirSync(customLevelDir)) {
+          console.error("A level with this name already exists! Please choose a different name.");
+          continue;
+        }
+        levelName = newLevelName;
+      }
       // Save the level to a file
-      const levelName = "custom_level_" + (readdirSync(levelDir).length + 1) + ".txt";
       const levelContent = carPark.map(row => row.map(num => num.toString(16)).join("")).join("\n") + "\n" + solution.length;
-      writeFileSync(join(levelDir, levelName), levelContent, "utf-8");
-      console.log(`Level saved as ${levelName} in the levels directory.`);
+      writeFileSync(join(customLevelDir, levelName), levelContent, "utf-8");
+      console.log(colorize(`Level #y${levelName}# saved.`));
       continue;
     }
     if (eInput.toLowerCase() === "q") {
@@ -198,7 +257,6 @@ async function levelEditor() {
     }
     console.error("Invalid input");
   }
-  console.log("Quitting level editor.");
 }
 
 /**
@@ -712,7 +770,7 @@ async function main() {
       continue;
     }
     if (levelChoice.toLowerCase() === "e") {
-      await levelEditor();
+      await openLevelEditor();
       continue;
     }
     if (levelChoice.toLowerCase() === "q") {
